@@ -4,12 +4,19 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Set up local.properties
+      - name: Create Flutter skeleton
         script: |
-          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+          flutter create . --platforms=android --org com.example
+          mkdir -p android/app
+          cp google-services.json android/app/ || true
+      - name: Fix Android SDK & Firebase Config
+        script: |
+          # Set minSdkVersion to 21
+          sed -i 's/minSdkVersion.*/minSdkVersion 21/' android/app/build.gradle || true
+          sed -i 's/flutter.minSdkVersion/21/' android/app/build.gradle || true
       - name: Get packages
         script: flutter packages pub get
       - name: Build Android APK
-        script: flutter build apk --release
+        script: flutter build apk --release --no-sound-null-safety || flutter build apk --release
     artifacts:
       - build/**/outputs/**/*.apk
