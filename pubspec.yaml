@@ -1,5 +1,5 @@
 name: tiktok_clone
-description: TikTok clone short video feed in Flutter
+description: Full featured TikTok clone with Firebase and Camera
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,6 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
   video_player: ^2.8.2
+  image_picker: ^1.0.7
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.17.8
+  cloud_firestore: ^4.15.8
+  firebase_storage: ^11.6.9
 
 flutter:
   uses-material-design: true
