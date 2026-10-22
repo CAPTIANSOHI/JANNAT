@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "132149577196",
+    "project_id": "jannat-dfc9d",
+    "storage_bucket": "jannat-dfc9d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:132149577196:android:c3c2e88765b986c5fc6cc9",
+        "android_client_info": {
+          "package_name": "COM.JANNAT.JANNAT"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhBS4gWve8TpYOo0-O2jntSlfjOpn-MPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
