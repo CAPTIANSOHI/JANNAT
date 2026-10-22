@@ -1,7 +1,19 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Firebase init: $e");
+  }
   runApp(const TikTokApp());
 }
 
@@ -10,164 +22,312 @@ class TikTokApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'TikTok Clone',
-      home: TikTokFeedScreen(),
+      title: 'Jannat Shorts',
+      theme: ThemeData.dark(),
+      home: const MainHomeScreen(),
     );
   }
 }
 
-class VideoModel {
-  final String id;
-  final String videoUrl;
-  final String username;
-  final String caption;
-  final String songTitle;
-  int likes;
-  int comments;
-  bool isLiked;
-  bool isFollowed;
-
-  VideoModel({
-    required this.id,
-    required this.videoUrl,
-    required this.username,
-    required this.caption,
-    required this.songTitle,
-    required this.likes,
-    required this.comments,
-    this.isLiked = false,
-    this.isFollowed = false,
-  });
-}
-
-class TikTokFeedScreen extends StatefulWidget {
-  const TikTokFeedScreen({super.key});
+class MainHomeScreen extends StatefulWidget {
+  const MainHomeScreen({super.key});
 
   @override
-  State<TikTokFeedScreen> createState() => _TikTokFeedScreenState();
+  State<MainHomeScreen> createState() => _MainHomeScreenState();
 }
 
-class _TikTokFeedScreenState extends State<TikTokFeedScreen> {
-  final PageController _pageController = PageController();
+class _MainHomeScreenState extends State<MainHomeScreen> {
+  final ImagePicker _picker = ImagePicker();
+  bool _isUploading = false;
 
-  final List<VideoModel> _videos = [
-    VideoModel(
-      id: '1',
-      videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-girl-dancing-happy-in-a-field-of-yellow-flowers-40439-large.mp4',
-      username: '@urban_dancer',
-      caption: 'Dancing under the sun ✨ #vibes #trending',
-      songTitle: 'Original Audio - Urban Beat',
-      likes: 12400,
-      comments: 320,
-    ),
-    VideoModel(
-      id: '2',
-      videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-young-woman-skater-riding-a-skateboard-at-sunset-40348-large.mp4',
-      username: '@skater_pro',
-      caption: 'Sunset cruise on the deck 🛹🔥',
-      songTitle: 'Chill Sunset Beats - LoFi',
-      likes: 85200,
-      comments: 1140,
-    ),
-    VideoModel(
-      id: '3',
-      videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-water-1164-large.mp4',
-      username: '@nature_daily',
-      caption: 'Calm ocean tides for peace of mind 🌊',
-      songTitle: 'Ocean Waves Sound - Relax',
-      likes: 45000,
-      comments: 530,
-    ),
-  ];
+  // 1. Camera Recording & Upload System
+  Future<void> _recordAndUploadVideo() async {
+    final XFile? recordedVideo = await _picker.pickVideo(
+      source: ImageSource.camera,
+      maxDuration: const Duration(seconds: 30),
+    );
 
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
+    if (recordedVideo == null) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      File file = File(recordedVideo.path);
+      String fileName = 'videos/${DateTime.now().millisecondsSinceEpoch}.mp4';
+
+      // Firebase Storage vich upload
+      TaskSnapshot snapshot = await FirebaseStorage.instance.ref(fileName).putFile(file);
+      String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      // Firestore Database vich entry
+      await FirebaseFirestore.instance.collection('videos').add({
+        'videoUrl': downloadUrl,
+        'username': '@captiansohi',
+        'caption': 'Fresh recorded video! 🔥 #jannat',
+        'songTitle': 'Original Audio - Sound',
+        'likes': 0,
+        'likedBy': [],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Video live ho gayi!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        itemCount: _videos.length,
-        itemBuilder: (context, index) {
-          return TikTokVideoItem(
-            video: _videos[index],
-          );
-        },
+      body: Stack(
+        children: [
+          // Firestore ton Live Real-Time Feed
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('videos')
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: Colors.white));
+              }
+
+              // Fallback default videos agar cloud khali hove
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return PageView(
+                  scrollDirection: Axis.vertical,
+                  children: const [
+                    TikTokVideoItem(
+                      docId: 'demo1',
+                      videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-girl-dancing-happy-in-a-field-of-yellow-flowers-40439-large.mp4',
+                      username: '@dancer_star',
+                      caption: 'Record icon daba ke apni video pao! ✨',
+                      songTitle: 'Trending Beats',
+                      likes: 120,
+                    ),
+                  ],
+                );
+              }
+
+              return PageView.builder(
+                scrollDirection: Axis.vertical,
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final data = docs[index].data() as Map<String, dynamic>;
+                  return TikTokVideoItem(
+                    docId: docs[index].id,
+                    videoUrl: data['videoUrl'] ?? '',
+                    username: data['username'] ?? '@user',
+                    caption: data['caption'] ?? '',
+                    songTitle: data['songTitle'] ?? 'Original Sound',
+                    likes: data['likes'] ?? 0,
+                  );
+                },
+              );
+            },
+          ),
+
+          // Uploading Status Indicator
+          if (_isUploading)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFFFE2C55)),
+                    SizedBox(height: 12),
+                    Text('Video cloud te upload ho rahi hai...', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+            ),
+
+          // Bottom Bar Record (+ Camera) Button
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: _recordAndUploadVideo,
+                  child: Container(
+                    height: 48,
+                    width: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFE2C55),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.videocam, color: Colors.white, size: 28),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class TikTokVideoItem extends StatefulWidget {
-  final VideoModel video;
+  final String docId;
+  final String videoUrl;
+  final String username;
+  final String caption;
+  final String songTitle;
+  final int likes;
 
   const TikTokVideoItem({
     super.key,
-    required this.video,
+    required this.docId,
+    required this.videoUrl,
+    required this.username,
+    required this.caption,
+    required this.songTitle,
+    required this.likes,
   });
 
   @override
   State<TikTokVideoItem> createState() => _TikTokVideoItemState();
 }
 
-class _TikTokVideoItemState extends State<TikTokVideoItem>
-    with SingleTickerProviderStateMixin {
+class _TikTokVideoItemState extends State<TikTokVideoItem> {
   late VideoPlayerController _controller;
-  bool _isHeartAnimating = false;
-  late AnimationController _animController;
-  late Animation<double> _scaleAnimation;
+  bool _isLiked = false;
+  late int _likeCount;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(
-      Uri.parse(widget.video.videoUrl),
-    )..initialize().then((_) {
+    _likeCount = widget.likes;
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+      ..initialize().then((_) {
         setState(() {});
         _controller.setLooping(true);
         _controller.play();
       });
-
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _scaleAnimation = Tween<double>(begin: 0.5, end: 1.3).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
-    );
-  }
-
-  void _triggerLike() {
-    setState(() {
-      if (!widget.video.isLiked) {
-        widget.video.isLiked = true;
-        widget.video.likes++;
-      }
-      _isHeartAnimating = true;
-    });
-
-    _animController.forward(from: 0.0).then((_) {
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (mounted) {
-          setState(() => _isHeartAnimating = false);
-        }
-      });
-    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
-    _animController.dispose();
     super.dispose();
+  }
+
+  // 2. Real-Time Bottom Comment Sheet
+  void _openCommentsDrawer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final commentCtrl = TextEditingController();
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: SizedBox(
+            height: 420,
+            child: Column(
+              children: [
+                const Text('Comments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Divider(color: Colors.white24),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('videos')
+                        .doc(widget.docId)
+                        .collection('comments')
+                        .orderBy('createdAt', descending: true)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const Center(child: Text('Haje koi comment nahi. Pehla comment tusi karo!'));
+                      }
+                      final cDocs = snapshot.data!.docs;
+                      return ListView.builder(
+                        itemCount: cDocs.length,
+                        itemBuilder: (context, i) {
+                          final c = cDocs[i].data() as Map<String, dynamic>;
+                          return ListTile(
+                            leading: const CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Colors.grey,
+                              child: Icon(Icons.person, size: 18, color: Colors.white),
+                            ),
+                            title: Text(c['user'] ?? 'Anonymous', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            subtitle: Text(c['text'] ?? '', style: const TextStyle(fontSize: 14, color: Colors.white70)),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: commentCtrl,
+                          decoration: InputDecoration(
+                            hintText: 'Add comment...',
+                            filled: true,
+                            fillColor: Colors.black26,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.send, color: Color(0xFFFE2C55)),
+                        onPressed: () {
+                          if (commentCtrl.text.trim().isNotEmpty) {
+                            FirebaseFirestore.instance
+                                .collection('videos')
+                                .doc(widget.docId)
+                                .collection('comments')
+                                .add({
+                              'user': '@guest',
+                              'text': commentCtrl.text.trim(),
+                              'createdAt': FieldValue.serverTimestamp(),
+                            });
+                            commentCtrl.clear();
+                          }
+                        },
+                      )
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -178,12 +338,9 @@ class _TikTokVideoItemState extends State<TikTokVideoItem>
           child: GestureDetector(
             onTap: () {
               setState(() {
-                _controller.value.isPlaying
-                    ? _controller.pause()
-                    : _controller.play();
+                _controller.value.isPlaying ? _controller.pause() : _controller.play();
               });
             },
-            onDoubleTap: _triggerLike,
             child: _controller.value.isInitialized
                 ? FittedBox(
                     fit: BoxFit.cover,
@@ -193,167 +350,59 @@ class _TikTokVideoItemState extends State<TikTokVideoItem>
                       child: VideoPlayer(_controller),
                     ),
                   )
-                : const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
+                : const Center(child: CircularProgressIndicator(color: Colors.white)),
           ),
         ),
-        if (_isHeartAnimating)
-          Center(
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: const Icon(
-                Icons.favorite,
-                color: Color(0xFFFE2C55),
-                size: 110,
-              ),
-            ),
-          ),
-        if (_controller.value.isInitialized && !_controller.value.isPlaying)
-          const Center(
-            child: Icon(
-              Icons.play_arrow,
-              size: 80,
-              color: Colors.white54,
-            ),
-          ),
+
+        // Bottom Details
         Positioned(
           left: 16,
-          bottom: 24,
-          right: 90,
+          bottom: 74,
+          right: 80,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                widget.video.username,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
+              Text(widget.username, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 6),
-              Text(
-                widget.video.caption,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
+              Text(widget.caption, maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 6),
               Row(
                 children: [
-                  const Icon(Icons.music_note, color: Colors.white, size: 16),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      widget.video.songTitle,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                  ),
+                  const Icon(Icons.music_note, size: 16),
+                  const SizedBox(width: 4),
+                  Text(widget.songTitle, style: const TextStyle(fontSize: 13)),
                 ],
-              ),
+              )
             ],
           ),
         ),
+
+        // Action Buttons
         Positioned(
           right: 12,
-          bottom: 24,
+          bottom: 74,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Colors.white,
-                    child: CircleAvatar(
-                      radius: 22,
-                      backgroundImage: NetworkImage('https://i.pravatar.cc/100'),
-                    ),
-                  ),
-                  if (!widget.video.isFollowed)
-                    Positioned(
-                      bottom: -6,
-                      left: 14,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            widget.video.isFollowed = true;
-                          });
-                        },
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFE2C55),
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(2),
-                          child: const Icon(Icons.add, color: Colors.white, size: 16),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              GestureDetector(
-                onTap: () {
+              IconButton(
+                icon: Icon(Icons.favorite, size: 36, color: _isLiked ? const Color(0xFFFE2C55) : Colors.white),
+                onPressed: () {
                   setState(() {
-                    widget.video.isLiked = !widget.video.isLiked;
-                    widget.video.isLiked ? widget.video.likes++ : widget.video.likes--;
+                    _isLiked = !_isLiked;
+                    _isLiked ? _likeCount++ : _likeCount--;
                   });
+                  // Cloud DB Like Counter Update
+                  FirebaseFirestore.instance.collection('videos').doc(widget.docId).update({
+                    'likes': _likeCount,
+                  }).catchError((_) {});
                 },
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.favorite,
-                      size: 38,
-                      color: widget.video.isLiked
-                          ? const Color(0xFFFE2C55)
-                          : Colors.white,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.video.likes}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
               ),
-              const SizedBox(height: 18),
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Comments section')),
-                  );
-                },
-                child: Column(
-                  children: [
-                    const Icon(Icons.comment, size: 36, color: Colors.white),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.video.comments}',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ],
-                ),
+              Text('$_likeCount', style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 14),
+              IconButton(
+                icon: const Icon(Icons.comment, size: 34, color: Colors.white),
+                onPressed: _openCommentsDrawer,
               ),
-              const SizedBox(height: 18),
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Link Copied!')),
-                  );
-                },
-                child: const Column(
-                  children: [
-                    Icon(Icons.reply, size: 36, color: Colors.white),
-                    SizedBox(height: 4),
-                    Text('Share', style: TextStyle(color: Colors.white, fontSize: 12)),
-                  ],
-                ),
-              ),
+              const Text('Comments', style: TextStyle(fontSize: 11)),
             ],
           ),
         ),
