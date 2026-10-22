@@ -5,10 +5,13 @@ workflows:
       flutter: stable
     scripts:
       - name: Create Flutter skeleton
-        script: flutter create . --platforms=android
+        script: |
+          flutter create . --platforms=android --org com.example
+          mkdir -p android/app
+          cp google-services.json android/app/ || true
       - name: Get packages
         script: flutter packages pub get
       - name: Build Android APK
         script: flutter build apk --release
     artifacts:
-      - build/**/outputs/**/*.apk  
+      - build/**/outputs/**/*.apk
