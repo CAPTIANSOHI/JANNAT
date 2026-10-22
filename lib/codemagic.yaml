@@ -1,0 +1,15 @@
+workflows:
+  android-workflow:
+    name: Build TikTok APK
+    environment:
+      flutter: stable
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
+      - name: Get packages
+        script: flutter packages pub get
+      - name: Build Android APK
+        script: flutter build apk --release
+    artifacts:
+      - build/**/outputs/**/*.apk
