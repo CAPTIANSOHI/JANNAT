@@ -4,35 +4,68 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Generate Fresh Android Project
+      - name: Clean and Recreate Android Project
         script: |
-          # Purana android folder remove karke fresh create karo
+          # Purana corrupted android folder delete karo
           rm -rf android
-          flutter create . --platforms=android --org com.example
-          mkdir -p android/app
+          
+          # Fresh clean Android platform generate karo
+          flutter create . --platforms=android --org com.jannat.app
+          
+          # google-services.json copy karo
           if [ -f google-services.json ]; then
             cp google-services.json android/app/
           fi
-      - name: Configure Android SDK & Gradle
-        script: |
-          # Set compileSdk 34, targetSdk 34, minSdk 21
-          sed -i 's/compileSdk = .*/compileSdk = 34/' android/app/build.gradle* || true
-          sed -i 's/targetSdk = .*/targetSdk = 34/' android/app/build.gradle* || true
-          sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle* || true
-          sed -i 's/flutter.compileSdkVersion/34/g' android/app/build.gradle* || true
-          sed -i 's/flutter.targetSdkVersion/34/g' android/app/build.gradle* || true
-          sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle* || true
 
-          # Modern Gradle plugin support for Google Services
-          if grep -q "plugins {" android/settings.gradle*; then
-            sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.1" apply false' android/settings.gradle* || true
-          fi
-          if grep -q "plugins {" android/app/build.gradle*; then
-            sed -i '/plugins {/a \    id "com.google.gms.google-services"' android/app/build.gradle* || true
-          fi
+      - name: Setup Gradle and SDK Versions Safely
+        script: |
+          # SDK 34 compile aur minSdk 21 safely configure karo
+          cat << 'EOF' > update_gradle.py
+          import re
+
+          # 1. Update android/app/build.gradle
+          with open("android/app/build.gradle", "r") as f:
+              content = f.read()
+
+          # Replace compileSdk, minSdk, targetSdk
+          content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 34', content)
+          content = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 34', content)
+          content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 21', content)
+
+          # Add Google Services plugin if present
+          if 'com.google.gms.google-services' not in content:
+              content = content.replace('plugins {', 'plugins {\n    id "com.google.gms.google-services"')
+
+          with open("android/app/build.gradle", "w") as f:
+              f.write(content)
+
+          # 2. Update android/settings.gradle
+          with open("android/settings.gradle", "r") as f:
+              s_content = f.read()
+
+          if 'com.google.gms.google-services' not in s_content:
+              s_content = s_content.replace('plugins {', 'plugins {\n    id "com.google.gms.google-services" version "4.4.1" apply false')
+
+          with open("android/settings.gradle", "w") as f:
+              s_content = s_content + """
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          """
+              f.write(s_content)
+
+          EOF
+          python3 update_gradle.py || true
+
       - name: Get packages
         script: flutter packages pub get
+
       - name: Build Android APK
-        script: flutter build apk --release
+        script: flutter build apk --release --no-tree-shake-icons
+
     artifacts:
       - build/**/outputs/**/*.apk
