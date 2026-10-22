@@ -4,19 +4,35 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Create Flutter skeleton
+      - name: Generate Fresh Android Project
         script: |
+          # Purana android folder remove karke fresh create karo
+          rm -rf android
           flutter create . --platforms=android --org com.example
           mkdir -p android/app
-          cp google-services.json android/app/ || true
-      - name: Fix Android SDK & Firebase Config
+          if [ -f google-services.json ]; then
+            cp google-services.json android/app/
+          fi
+      - name: Configure Android SDK & Gradle
         script: |
-          # Set minSdkVersion to 21
-          sed -i 's/minSdkVersion.*/minSdkVersion 21/' android/app/build.gradle || true
-          sed -i 's/flutter.minSdkVersion/21/' android/app/build.gradle || true
+          # Set compileSdk 34, targetSdk 34, minSdk 21
+          sed -i 's/compileSdk = .*/compileSdk = 34/' android/app/build.gradle* || true
+          sed -i 's/targetSdk = .*/targetSdk = 34/' android/app/build.gradle* || true
+          sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle* || true
+          sed -i 's/flutter.compileSdkVersion/34/g' android/app/build.gradle* || true
+          sed -i 's/flutter.targetSdkVersion/34/g' android/app/build.gradle* || true
+          sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle* || true
+
+          # Modern Gradle plugin support for Google Services
+          if grep -q "plugins {" android/settings.gradle*; then
+            sed -i '/plugins {/a \    id "com.google.gms.google-services" version "4.4.1" apply false' android/settings.gradle* || true
+          fi
+          if grep -q "plugins {" android/app/build.gradle*; then
+            sed -i '/plugins {/a \    id "com.google.gms.google-services"' android/app/build.gradle* || true
+          fi
       - name: Get packages
         script: flutter packages pub get
       - name: Build Android APK
-        script: flutter build apk --release --no-sound-null-safety || flutter build apk --release
+        script: flutter build apk --release
     artifacts:
       - build/**/outputs/**/*.apk
