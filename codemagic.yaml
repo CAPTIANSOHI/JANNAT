@@ -1,0 +1,14 @@
+workflows:
+  android-workflow:
+    name: Build TikTok APK
+    environment:
+      flutter: stable
+    scripts:
+      - name: Create Flutter skeleton
+        script: flutter create . --platforms=android
+      - name: Get packages
+        script: flutter packages pub get
+      - name: Build Android APK
+        script: flutter build apk --release
+    artifacts:
+      - build/**/outputs/**/*.apk  
