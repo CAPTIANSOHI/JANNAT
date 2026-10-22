@@ -8,7 +8,38 @@ workflows:
         script: |
           flutter create . --platforms=android --org com.example
           mkdir -p android/app
-          cp google-services.json android/app/ || true
+          if [ -f google-services.json ]; then
+            cp google-services.json android/app/
+          fi
+      - name: Configure Android SDK & Gradle Override
+        script: |
+          # Set compileSdk and targetSdk to 34, minSdk to 21
+          sed -i 's/flutter.compileSdkVersion/34/g' android/app/build.gradle || true
+          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle || true
+          sed -i 's/flutter.minSdkVersion/21/g' android/app/build.gradle || true
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle || true
+          sed -i 's/flutter.targetSdkVersion/34/g' android/app/build.gradle || true
+          sed -i 's/targetSdkVersion .*/targetSdkVersion 34/g' android/app/build.gradle || true
+          
+          # Force all plugin subprojects to compile against SDK 34
+          cat << 'EOF' >> android/build.gradle
+
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          compileSdkVersion 34
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # Add Google Services classpath to android/build.gradle
+          sed -i '/dependencies {/a \        classpath "com.google.gms:google-services:4.4.1"' android/build.gradle || true
+          
+          # Apply plugin in android/app/build.gradle
+          echo 'apply plugin: "com.google.gms.google-services"' >> android/app/build.gradle
       - name: Get packages
         script: flutter packages pub get
       - name: Build Android APK
